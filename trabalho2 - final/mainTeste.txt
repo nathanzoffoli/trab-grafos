@@ -17,7 +17,8 @@
 
 // Estrutura para guardar os resultados processados
 struct ResultadoProcessado {
-    double valor_comparacao = 0.0; // Agora guarda o melhor valor, não a média
+    std::vector<char> melhor_solucao_encontrada; // Guarda o conjunto de vértices
+    double valor_comparacao = 0.0; // Guarda o melhor valor (não a média)
     double media_tempo_ms = 0.0;
     double desvio_percentual = 0.0;
 };
@@ -42,19 +43,21 @@ std::unique_ptr<Grafo> carregarGrafo(const std::string& nome_arquivo) {
     return std::make_unique<Grafo>(direcionado, ponderado_aresta, ponderado_vertice, ids_vertices, arestas_pares);
 }
 
+// Função auxiliar para imprimir um vetor de char
+void imprimirVetor(std::ostream& os, const std::vector<char>& vec) {
+    os << "{";
+    for (size_t i = 0; i < vec.size(); ++i) {
+        os << vec[i] << (i == vec.size() - 1 ? "" : ",");
+    }
+    os << "}";
+}
+
 int main() {
     // --- PARÂMETROS DE CONFIGURAÇÃO DO EXPERIMENTO ---
     std::vector<std::string> instancias = {
-        // **IMPORTANTE**: Coloque aqui os nomes dos seus 10 arquivos de instância
-        "g_10_0.30_0_0_2.txt",
-        "g_10_0.50_0_0_1.txt",
-        "g_10_0.60_0_0_0.txt",
-        "g_25_0.21_0_1_1.txt", 
-        "g_25_0.28_0_0_1.txt",
-        "g_25_0.48_1_0_1.txt",
-        "g_40_0.20_0_1_0.txt",
-        "g_50_0.44_1_0_0.txt",
-        "g_60_0.07_0_1_0.txt",
+        "g_10_0.30_0_0_2.txt", "g_10_0.50_0_0_1.txt", "g_10_0.60_0_0_0.txt",
+        "g_25_0.21_0_1_1.txt", "g_25_0.28_0_0_1.txt", "g_25_0.48_1_0_1.txt",
+        "g_40_0.20_0_1_0.txt", "g_50_0.44_1_0_0.txt", "g_60_0.07_0_1_0.txt",
         "g_60_0.17_0_1_0.txt"
     };
 
@@ -66,6 +69,10 @@ int main() {
     std::cout << "Iniciando experimentos... Isso pode levar algum tempo." << std::endl;
 
     std::map<std::string, std::map<std::string, ResultadoProcessado>> resultados;
+    std::map<std::string, double> somas_valores;
+    std::map<std::string, double> somas_tempos;
+    std::map<std::string, double> somas_desvios;
+
 
     for (const std::string& nome_instancia : instancias) {
         std::unique_ptr<Grafo> grafo = carregarGrafo(nome_instancia);
@@ -78,57 +85,57 @@ int main() {
         auto inicio = std::chrono::high_resolution_clock::now();
         std::vector<char> solucao_guloso = AlgoritmosGulosos::algoritmoGuloso(grafo.get());
         auto fim = std::chrono::high_resolution_clock::now();
+        resultados[nome_instancia]["Guloso"].melhor_solucao_encontrada = solucao_guloso;
         resultados[nome_instancia]["Guloso"].valor_comparacao = solucao_guloso.size();
         resultados[nome_instancia]["Guloso"].media_tempo_ms = std::chrono::duration_cast<std::chrono::milliseconds>(fim - inicio).count();
         if (solucao_guloso.size() > 0 && solucao_guloso.size() < best_valor_instancia) best_valor_instancia = solucao_guloso.size();
 
         // --- Experimento 2: Randomizado ---
         for (float alfa : alfas) {
-            std::vector<double> valores_temp;
+            std::vector<char> melhor_solucao_local;
             std::vector<double> tempos_temp;
             for (int i = 0; i < num_execucoes; ++i) {
                 inicio = std::chrono::high_resolution_clock::now();
                 std::vector<char> solucao_rand = AlgoritmosGulosos::algoritmoGulosoRandomizado(grafo.get(), alfa, iteracoes_randomizado);
                 fim = std::chrono::high_resolution_clock::now();
-                valores_temp.push_back(solucao_rand.size());
                 tempos_temp.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(fim - inicio).count());
-                if (solucao_rand.size() > 0 && solucao_rand.size() < best_valor_instancia) best_valor_instancia = solucao_rand.size();
+                if (melhor_solucao_local.empty() || solucao_rand.size() < melhor_solucao_local.size()){
+                    melhor_solucao_local = solucao_rand;
+                }
             }
+            if (melhor_solucao_local.size() > 0 && melhor_solucao_local.size() < best_valor_instancia) best_valor_instancia = melhor_solucao_local.size();
             std::string nome_alg = "Rand_" + std::to_string(alfa).substr(0,3);
-            
-            // ALTERAÇÃO: Usar o melhor valor (mínimo), não a média, para a qualidade
-            if(!valores_temp.empty()){
-                resultados[nome_instancia][nome_alg].valor_comparacao = *std::min_element(valores_temp.begin(), valores_temp.end());
-            }
+            resultados[nome_instancia][nome_alg].melhor_solucao_encontrada = melhor_solucao_local;
+            resultados[nome_instancia][nome_alg].valor_comparacao = melhor_solucao_local.size();
             resultados[nome_instancia][nome_alg].media_tempo_ms = std::accumulate(tempos_temp.begin(), tempos_temp.end(), 0.0) / num_execucoes;
         }
 
         // --- Experimento 3: Reativo ---
-        std::vector<double> valores_temp;
-        std::vector<double> tempos_temp;
+        std::vector<char> melhor_solucao_local_reativo;
+        std::vector<double> tempos_temp_reativo;
         for (int i = 0; i < num_execucoes; ++i) {
             inicio = std::chrono::high_resolution_clock::now();
             std::vector<char> solucao_reativo = AlgoritmosGulosos::algoritmoGulosoRandomizadoReativo(grafo.get(), iteracoes_reativo);
             fim = std::chrono::high_resolution_clock::now();
-            valores_temp.push_back(solucao_reativo.size());
-            tempos_temp.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(fim - inicio).count());
-            if (solucao_reativo.size() > 0 && solucao_reativo.size() < best_valor_instancia) best_valor_instancia = solucao_reativo.size();
+            tempos_temp_reativo.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(fim - inicio).count());
+            if(melhor_solucao_local_reativo.empty() || solucao_reativo.size() < melhor_solucao_local_reativo.size()){
+                melhor_solucao_local_reativo = solucao_reativo;
+            }
         }
-        
-        // ALTERAÇÃO: Usar o melhor valor (mínimo), não a média, para a qualidade
-        if(!valores_temp.empty()){
-            resultados[nome_instancia]["Reativo"].valor_comparacao = *std::min_element(valores_temp.begin(), valores_temp.end());
-        }
-        resultados[nome_instancia]["Reativo"].media_tempo_ms = std::accumulate(tempos_temp.begin(), tempos_temp.end(), 0.0) / num_execucoes;
+        if (melhor_solucao_local_reativo.size() > 0 && melhor_solucao_local_reativo.size() < best_valor_instancia) best_valor_instancia = melhor_solucao_local_reativo.size();
+        resultados[nome_instancia]["Reativo"].melhor_solucao_encontrada = melhor_solucao_local_reativo;
+        resultados[nome_instancia]["Reativo"].valor_comparacao = melhor_solucao_local_reativo.size();
+        resultados[nome_instancia]["Reativo"].media_tempo_ms = std::accumulate(tempos_temp_reativo.begin(), tempos_temp_reativo.end(), 0.0) / num_execucoes;
 
-        // --- Pós-processamento: Calcular Desvio Percentual ---
+        // --- Pós-processamento e Acumulação para Médias ---
         resultados[nome_instancia]["Best"].valor_comparacao = best_valor_instancia;
         for (auto& par : resultados[nome_instancia]) {
-            if(par.first != "Best"){
-                double valor_alg = par.second.valor_comparacao;
-                if (best_valor_instancia > 0) {
-                    par.second.desvio_percentual = (valor_alg - best_valor_instancia) / best_valor_instancia;
-                }
+            const std::string& nome_alg = par.first;
+            if(nome_alg != "Best"){
+                par.second.desvio_percentual = (par.second.valor_comparacao - best_valor_instancia) / best_valor_instancia;
+                somas_valores[nome_alg] += par.second.valor_comparacao;
+                somas_tempos[nome_alg] += par.second.media_tempo_ms;
+                somas_desvios[nome_alg] += par.second.desvio_percentual;
             }
         }
     }
@@ -136,14 +143,35 @@ int main() {
     // --- GERAÇÃO DO ARQUIVO DE SAÍDA ---
     std::ofstream arquivo_saida("resultados.txt");
     arquivo_saida << std::fixed << std::setprecision(2);
+    size_t num_instancias = instancias.size();
 
-    // Tabela 1: Qualidade (Desvio Percentual)
-    arquivo_saida << "--- TABELA DE QUALIDADE (DESVIO PERCENTUAL) ---\n\n";
+    // Tabela 1: Melhor Valor Encontrado (Tamanho da Solução)
+    arquivo_saida << "--- TABELA DE MELHOR VALOR ENCONTRADO (TAMANHO DA SOLUCAO) ---\n\n";
+    arquivo_saida << std::left << std::setw(25) << "Instancia" << std::setw(10) << "Guloso";
+    for(float alfa : alfas) { arquivo_saida << std::setw(8) << ("R_" + std::to_string(alfa).substr(0,3)); }
+    arquivo_saida << std::setw(8) << "Reativo" << "\n";
+    arquivo_saida << std::string(35 + 8 * alfas.size(), '-') << "\n";
+    for(const auto& par_inst : resultados){
+        arquivo_saida << std::left << std::setw(25) << par_inst.first;
+        arquivo_saida << std::setw(10) << (int)par_inst.second.at("Guloso").valor_comparacao;
+        for(float alfa : alfas) {
+             arquivo_saida << std::setw(8) << (int)par_inst.second.at("Rand_" + std::to_string(alfa).substr(0,3)).valor_comparacao;
+        }
+        arquivo_saida << std::setw(8) << (int)par_inst.second.at("Reativo").valor_comparacao << "\n";
+    }
+    arquivo_saida << std::string(35 + 8 * alfas.size(), '-') << "\n";
+    arquivo_saida << std::left << std::setw(25) << "Media";
+    arquivo_saida << std::setw(10) << somas_valores["Guloso"] / num_instancias;
+    for(float alfa : alfas) { arquivo_saida << std::setw(8) << somas_valores["Rand_" + std::to_string(alfa).substr(0,3)] / num_instancias; }
+    arquivo_saida << std::setw(8) << somas_valores["Reativo"] / num_instancias << "\n";
+
+
+    // Tabela 2: Qualidade (Desvio Percentual)
+    arquivo_saida << "\n\n--- TABELA DE QUALIDADE (DESVIO PERCENTUAL) ---\n\n";
     arquivo_saida << std::left << std::setw(25) << "Instancia" << std::setw(8) << "Best" << std::setw(10) << "Guloso";
     for(float alfa : alfas) { arquivo_saida << std::setw(8) << ("R_" + std::to_string(alfa).substr(0,3)); }
     arquivo_saida << std::setw(8) << "Reativo" << "\n";
     arquivo_saida << std::string(43 + 8 * alfas.size(), '-') << "\n";
-
     for(const auto& par_inst : resultados){
         arquivo_saida << std::left << std::setw(25) << par_inst.first
                       << std::setw(8) << (int)par_inst.second.at("Best").valor_comparacao
@@ -153,14 +181,19 @@ int main() {
         }
         arquivo_saida << std::setw(8) << par_inst.second.at("Reativo").desvio_percentual << "\n";
     }
+    arquivo_saida << std::string(43 + 8 * alfas.size(), '-') << "\n";
+    arquivo_saida << std::left << std::setw(25) << "Media Desvio" << std::setw(8) << "-";
+    arquivo_saida << std::setw(10) << somas_desvios["Guloso"] / num_instancias;
+    for(float alfa : alfas) { arquivo_saida << std::setw(8) << somas_desvios["Rand_" + std::to_string(alfa).substr(0,3)] / num_instancias; }
+    arquivo_saida << std::setw(8) << somas_desvios["Reativo"] / num_instancias << "\n";
 
-    // Tabela 2: Tempo (Média em ms)
+
+    // Tabela 3: Tempo (Média em ms)
     arquivo_saida << "\n\n--- TABELA DE TEMPO (MEDIA EM MILISSEGUNDOS) ---\n\n";
     arquivo_saida << std::left << std::setw(25) << "Instancia" << std::setw(10) << "Guloso";
     for(float alfa : alfas) { arquivo_saida << std::setw(8) << ("R_" + std::to_string(alfa).substr(0,3)); }
     arquivo_saida << std::setw(8) << "Reativo" << "\n";
     arquivo_saida << std::string(35 + 8 * alfas.size(), '-') << "\n";
-
     for(const auto& par_inst : resultados){
         arquivo_saida << std::left << std::setw(25) << par_inst.first
                       << std::setw(10) << par_inst.second.at("Guloso").media_tempo_ms;
@@ -169,7 +202,40 @@ int main() {
         }
         arquivo_saida << std::setw(8) << par_inst.second.at("Reativo").media_tempo_ms << "\n";
     }
+    arquivo_saida << std::string(35 + 8 * alfas.size(), '-') << "\n";
+    arquivo_saida << std::left << std::setw(25) << "Media Tempo";
+    arquivo_saida << std::setw(10) << somas_tempos["Guloso"] / num_instancias;
+    for(float alfa : alfas) { arquivo_saida << std::setw(8) << somas_tempos["Rand_" + std::to_string(alfa).substr(0,3)] / num_instancias; }
+    arquivo_saida << std::setw(8) << somas_tempos["Reativo"] / num_instancias << "\n";
     
+
+    // Tabela 4: Melhores Soluções Encontradas (Conjunto de Vértices)
+    arquivo_saida << "\n\n--- TABELA DE MELHORES SOLUCOES (CONJUNTO DE VERTICES) ---\n\n";
+    arquivo_saida << std::left << std::setw(25) << "Instancia" << std::setw(15) << "Algoritmo" << std::setw(10) << "Tamanho" << "Solucao\n";
+    arquivo_saida << std::string(90, '-') << "\n";
+
+    for(const auto& par_inst : resultados){
+        // Guloso
+        arquivo_saida << std::left << std::setw(25) << par_inst.first << std::setw(15) << "Guloso" << std::setw(10) << (int)par_inst.second.at("Guloso").valor_comparacao;
+        imprimirVetor(arquivo_saida, par_inst.second.at("Guloso").melhor_solucao_encontrada);
+        arquivo_saida << "\n";
+        
+        // Randomizados
+        for(float alfa : alfas){
+            std::string nome_alg = "Rand_" + std::to_string(alfa).substr(0,3);
+            arquivo_saida << std::left << std::setw(25) << "" << std::setw(15) << nome_alg << std::setw(10) << (int)par_inst.second.at(nome_alg).valor_comparacao;
+            imprimirVetor(arquivo_saida, par_inst.second.at(nome_alg).melhor_solucao_encontrada);
+            arquivo_saida << "\n";
+        }
+
+        // Reativo
+        arquivo_saida << std::left << std::setw(25) << "" << std::setw(15) << "Reativo" << std::setw(10) << (int)par_inst.second.at("Reativo").valor_comparacao;
+        imprimirVetor(arquivo_saida, par_inst.second.at("Reativo").melhor_solucao_encontrada);
+        arquivo_saida << "\n";
+
+        arquivo_saida << std::string(90, '-') << "\n";
+    }
+
     arquivo_saida.close();
     std::cout << "\nExperimentos concluidos! Resultados salvos em 'resultados.txt'." << std::endl;
 
